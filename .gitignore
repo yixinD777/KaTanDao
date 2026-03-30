@@ -1,0 +1,13 @@
+.DS_Store
+.idea/
+*.iml
+
+target/
+.mvn/
+
+node_modules/
+dist/
+.vite/
+
+.env
+.env.local
