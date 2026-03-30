@@ -113,8 +113,8 @@ input {
 .panel,
 .board-stage-inner {
   border-radius: 28px;
-  background: rgba(255, 250, 242, 0.84);
-  box-shadow: 0 22px 55px rgba(98, 65, 18, 0.12);
+  background: rgba(255, 249, 238, 0.9);
+  box-shadow: 0 22px 55px rgba(98, 65, 18, 0.14);
   backdrop-filter: blur(12px);
 }
 
@@ -315,6 +315,17 @@ button:disabled {
   font-weight: 800;
 }
 
+.gain-panel {
+  background: rgba(248, 243, 229, 0.92);
+}
+
+.gain-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #5f4b31;
+  line-height: 1.7;
+}
+
 .resource-pill {
   width: 14px;
   height: 14px;
@@ -334,7 +345,14 @@ button:disabled {
 }
 
 .board-stage-inner {
-  padding: 18px;
+  padding: 20px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.32), rgba(255,255,255,0.06)),
+    rgba(249, 240, 220, 0.88);
+  box-shadow:
+    inset 0 0 0 12px rgba(248, 237, 212, 0.9),
+    inset 0 0 0 1px rgba(156, 117, 50, 0.14),
+    0 22px 55px rgba(98, 65, 18, 0.16);
 }
 
 .board-svg {
@@ -346,7 +364,10 @@ button:disabled {
 
 .hex-label,
 .hex-number,
-.node-label {
+.node-label,
+.owner-label,
+.port-label,
+.port-subtext {
   font-weight: 800;
   fill: #2f2318;
 }
@@ -361,6 +382,24 @@ button:disabled {
 
 .node-label {
   font-size: 10px;
+}
+
+.owner-label {
+  font-size: 9px;
+  fill: rgba(47, 35, 24, 0.72);
+}
+
+.port-label {
+  font-size: 11px;
+}
+
+.port-subtext {
+  font-size: 8px;
+  fill: rgba(47, 35, 24, 0.78);
+}
+
+.robber-label {
+  fill: #f7efe2;
 }
 
 .board-edge {

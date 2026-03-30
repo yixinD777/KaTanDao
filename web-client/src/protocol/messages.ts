@@ -119,15 +119,28 @@ export interface GameStartedPayload {
 
 export interface HexTileState {
   hexId: string;
-  resourceType: "WOOD" | "BRICK" | "SHEEP" | "WHEAT" | "ORE";
+  resourceType: "WOOD" | "BRICK" | "SHEEP" | "WHEAT" | "ORE" | "DESERT";
   numberToken: number;
+  q: number;
+  r: number;
   adjacentIntersectionIds: string[];
+}
+
+export interface PortState {
+  portId: string;
+  tradeType: string;
+  ratio: number;
+  x: number;
+  y: number;
+  rotationDegrees: number;
 }
 
 export interface IntersectionState {
   intersectionId: string;
   ownerPlayerId: string | null;
   buildingType: "SETTLEMENT" | "CITY" | null;
+  x: number;
+  y: number;
 }
 
 export interface EdgeState {
@@ -169,6 +182,7 @@ export interface GameSnapshotPayload {
     phase: string;
     board: {
       hexes: HexTileState[];
+      ports: PortState[];
       intersections: IntersectionState[];
       edges: EdgeState[];
     };

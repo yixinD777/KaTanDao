@@ -16,7 +16,11 @@ class GameEngineTest {
         assertEquals(GamePhase.SETUP, state.phase());
         assertEquals("p1", state.turn().currentPlayerId());
         assertEquals(TurnStage.PLACE_INITIAL_SETTLEMENT, state.turn().stage());
-        assertEquals(6, state.board().intersections().size());
+        assertEquals(19, state.board().hexes().size());
+        assertEquals(54, state.board().intersections().size());
+        assertEquals(72, state.board().edges().size());
+        assertEquals(1, state.board().hexes().stream().filter(hex -> hex.resourceType() == ResourceType.DESERT).count());
+        assertEquals(18, state.board().hexes().stream().filter(hex -> hex.numberToken() > 0).count());
     }
 
     @Test
@@ -71,21 +75,40 @@ class GameEngineTest {
 
     @Test
     void shouldRollDiceDuringMainGame() {
-        GameState state = GameEngine.createInitialState("game-1", List.of("p1", "p2", "p3"));
-        state = GameEngine.apply(state, "p1", new GameAction(GameActionType.PLACE_INITIAL_SETTLEMENT, Map.of("intersectionId", "I-01")));
-        state = GameEngine.apply(state, "p1", new GameAction(GameActionType.PLACE_INITIAL_ROAD, Map.of("edgeId", "E-01")));
-        state = GameEngine.apply(state, "p2", new GameAction(GameActionType.PLACE_INITIAL_SETTLEMENT, Map.of("intersectionId", "I-03")));
-        state = GameEngine.apply(state, "p2", new GameAction(GameActionType.PLACE_INITIAL_ROAD, Map.of("edgeId", "E-02")));
-        state = GameEngine.apply(state, "p3", new GameAction(GameActionType.PLACE_INITIAL_SETTLEMENT, Map.of("intersectionId", "I-05")));
-        state = GameEngine.apply(state, "p3", new GameAction(GameActionType.PLACE_INITIAL_ROAD, Map.of("edgeId", "E-05")));
+        GameState initial = GameEngine.createInitialState("game-1", List.of("p1", "p2", "p3"));
+        HexTileState fiveHex = initial.board().hexes().stream()
+                .filter(hex -> hex.numberToken() == 5)
+                .filter(hex -> hex.resourceType() != ResourceType.DESERT)
+                .findFirst()
+                .orElseThrow();
+        String targetIntersectionId = fiveHex.adjacentIntersectionIds().get(0);
+
+        List<IntersectionState> updatedIntersections = initial.board().intersections().stream()
+                .map(intersection -> intersection.intersectionId().equals(targetIntersectionId)
+                        ? intersection.withBuilding("p1", BuildingType.SETTLEMENT)
+                        : intersection)
+                .toList();
+
+        GameState state = new GameState(
+                initial.gameId(),
+                GamePhase.IN_PROGRESS,
+                new GameBoard(initial.board().hexes(), initial.board().ports(), updatedIntersections, initial.board().edges()),
+                List.of(
+                        new PlayerState("p1", 14, 4, 4, 1, PlayerState.emptyResources(), targetIntersectionId),
+                        initial.players().get(1),
+                        initial.players().get(2)
+                ),
+                new TurnState("p1", 1, TurnStage.ROLL),
+                DiceState.initial(),
+                initial.version(),
+                null
+        );
 
         GameState rolled = GameEngine.apply(state, "p1", new GameAction(GameActionType.ROLL_DICE, Map.of()));
 
         assertEquals(TurnStage.MAIN, rolled.turn().stage());
         assertEquals(Integer.valueOf(5), rolled.dice().lastRoll());
-        assertEquals(1, rolled.players().get(0).resourceCount(ResourceType.WOOD));
-        assertEquals(1, rolled.players().get(0).resourceCount(ResourceType.BRICK));
-        assertEquals(1, rolled.players().get(1).resourceCount(ResourceType.WOOD));
+        assertEquals(1, rolled.players().get(0).resourceCount(fiveHex.resourceType()));
     }
 
     @Test
@@ -137,8 +160,9 @@ class GameEngineTest {
                 state.phase(),
                 new GameBoard(
                         state.board().hexes(),
+                        state.board().ports(),
                         List.of(
-                                new IntersectionState("I-01", "p1", BuildingType.SETTLEMENT),
+                                new IntersectionState("I-01", "p1", BuildingType.SETTLEMENT, state.board().intersections().get(0).x(), state.board().intersections().get(0).y()),
                                 state.board().intersections().get(1),
                                 state.board().intersections().get(2),
                                 state.board().intersections().get(3),

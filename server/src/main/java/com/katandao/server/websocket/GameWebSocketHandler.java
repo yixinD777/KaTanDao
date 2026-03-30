@@ -312,7 +312,12 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     }
 
     private void sendMessage(WebSocketSession session, OutboundMessage outboundMessage) throws IOException {
-        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(outboundMessage)));
+        synchronized (session) {
+            if (!session.isOpen()) {
+                return;
+            }
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(outboundMessage)));
+        }
     }
 
     private boolean isBlank(String value) {

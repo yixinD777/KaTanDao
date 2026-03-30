@@ -72,7 +72,7 @@ public final class GameEngine {
         return new GameState(
                 state.gameId(),
                 state.phase(),
-                new GameBoard(state.board().hexes(), updatedIntersections, state.board().edges()),
+                new GameBoard(state.board().hexes(), state.board().ports(), updatedIntersections, state.board().edges()),
                 updatedPlayers,
                 new TurnState(playerId, state.turn().turnNumber(), TurnStage.PLACE_INITIAL_ROAD),
                 state.dice(),
@@ -120,7 +120,7 @@ public final class GameEngine {
         return new GameState(
                 state.gameId(),
                 nextProgress.phase(),
-                new GameBoard(state.board().hexes(), state.board().intersections(), updatedEdges),
+                new GameBoard(state.board().hexes(), state.board().ports(), state.board().intersections(), updatedEdges),
                 updatedPlayers,
                 nextProgress.turnState(),
                 DiceState.initial(),
@@ -184,7 +184,7 @@ public final class GameEngine {
         return new GameState(
                 state.gameId(),
                 state.phase(),
-                new GameBoard(state.board().hexes(), state.board().intersections(), updatedEdges),
+                new GameBoard(state.board().hexes(), state.board().ports(), state.board().intersections(), updatedEdges),
                 updatedPlayers,
                 state.turn(),
                 state.dice(),
@@ -231,7 +231,7 @@ public final class GameEngine {
         return new GameState(
                 state.gameId(),
                 state.phase(),
-                new GameBoard(state.board().hexes(), updatedIntersections, state.board().edges()),
+                new GameBoard(state.board().hexes(), state.board().ports(), updatedIntersections, state.board().edges()),
                 updatedPlayers,
                 state.turn(),
                 state.dice(),
@@ -267,7 +267,7 @@ public final class GameEngine {
         return new GameState(
                 state.gameId(),
                 state.phase(),
-                new GameBoard(state.board().hexes(), updatedIntersections, state.board().edges()),
+                new GameBoard(state.board().hexes(), state.board().ports(), updatedIntersections, state.board().edges()),
                 updatedPlayers,
                 state.turn(),
                 state.dice(),

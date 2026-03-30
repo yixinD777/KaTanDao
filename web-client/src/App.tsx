@@ -11,28 +11,13 @@ import type {
 
 const socketUrl = "ws://127.0.0.1:8080/ws/game";
 
-const hexCenters: Record<string, { x: number; y: number }> = {
-  "H-04": { x: 320, y: 120 },
-  "H-01": { x: 440, y: 200 },
-  "H-02": { x: 440, y: 340 },
-  "H-03": { x: 320, y: 420 }
-};
-
-const intersectionPositions: Record<string, { x: number; y: number }> = {
-  "I-01": { x: 280, y: 100 },
-  "I-02": { x: 420, y: 100 },
-  "I-03": { x: 500, y: 240 },
-  "I-04": { x: 420, y: 380 },
-  "I-05": { x: 280, y: 380 },
-  "I-06": { x: 200, y: 240 }
-};
-
 const resourcePalette: Record<string, { fill: string; tint: string; label: string }> = {
   WOOD: { fill: "#527e47", tint: "#eaf4df", label: "Wood" },
   BRICK: { fill: "#b55c40", tint: "#feeee8", label: "Brick" },
   SHEEP: { fill: "#8abf62", tint: "#f3fbe7", label: "Sheep" },
   WHEAT: { fill: "#d2af45", tint: "#fff7dd", label: "Wheat" },
-  ORE: { fill: "#687485", tint: "#eef2f8", label: "Ore" }
+  ORE: { fill: "#687485", tint: "#eef2f8", label: "Ore" },
+  DESERT: { fill: "#29211b", tint: "#ece7dd", label: "Desert" }
 };
 
 const playerColors = ["#d97706", "#2563eb", "#059669", "#b91c1c"];
@@ -61,6 +46,95 @@ function hexPoints(x: number, y: number, radius: number) {
   }).join(" ");
 }
 
+function hexCenterFromAxial(q: number, r: number) {
+  const radius = 82;
+  return {
+    x: 470 + Math.sqrt(3) * radius * (q + r / 2),
+    y: 320 + radius * 1.5 * r
+  };
+}
+
+function fallbackHexCenter(index: number) {
+  const fallbackCenters = [
+    { x: 350, y: 110 },
+    { x: 470, y: 110 },
+    { x: 590, y: 110 },
+    { x: 290, y: 215 },
+    { x: 410, y: 215 },
+    { x: 530, y: 215 },
+    { x: 650, y: 215 },
+    { x: 230, y: 320 },
+    { x: 350, y: 320 },
+    { x: 470, y: 320 },
+    { x: 590, y: 320 },
+    { x: 710, y: 320 },
+    { x: 290, y: 425 },
+    { x: 410, y: 425 },
+    { x: 530, y: 425 },
+    { x: 650, y: 425 },
+    { x: 770, y: 425 },
+    { x: 470, y: 530 },
+    { x: 590, y: 530 }
+  ];
+  return fallbackCenters[index] ?? { x: 470, y: 320 };
+}
+
+function isFinitePoint(point: { x: number; y: number }) {
+  return Number.isFinite(point.x) && Number.isFinite(point.y);
+}
+
+function boardViewBox(snapshot: GameSnapshotPayload | null) {
+  const board = snapshot?.state.board;
+  if (!board) {
+    return "0 0 940 720";
+  }
+
+  const points: Array<{ x: number; y: number }> = [];
+  const hexRadius = 92;
+  for (const [index, hex] of board.hexes.entries()) {
+    const center = typeof hex.q === "number" && typeof hex.r === "number"
+      ? hexCenterFromAxial(hex.q, hex.r)
+      : fallbackHexCenter(index);
+    const bounds = [
+      { x: center.x - hexRadius, y: center.y - hexRadius },
+      { x: center.x + hexRadius, y: center.y + hexRadius }
+    ].filter(isFinitePoint);
+    points.push(...bounds);
+  }
+
+  for (const intersection of board.intersections) {
+    const point = {
+      x: Number(intersection.x),
+      y: Number(intersection.y)
+    };
+    if (isFinitePoint(point)) {
+      points.push(point);
+    }
+  }
+
+  for (const port of board.ports ?? []) {
+    const bounds = [
+      { x: Number(port.x) - 60, y: Number(port.y) - 60 },
+      { x: Number(port.x) + 60, y: Number(port.y) + 60 }
+    ].filter(isFinitePoint);
+    points.push(...bounds);
+  }
+
+  if (points.length === 0) {
+    return "0 0 940 720";
+  }
+
+  const minX = Math.min(...points.map((point) => point.x));
+  const minY = Math.min(...points.map((point) => point.y));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const maxY = Math.max(...points.map((point) => point.y));
+  if (![minX, minY, maxX, maxY].every(Number.isFinite)) {
+    return "80 0 780 720";
+  }
+  const padding = 56;
+  return `${minX - padding} ${minY - padding} ${maxX - minX + padding * 2} ${maxY - minY + padding * 2}`;
+}
+
 function playerColor(playerId: string, orderedIds: string[]) {
   const index = orderedIds.indexOf(playerId);
   return playerColors[index >= 0 ? index % playerColors.length : 0];
@@ -71,7 +145,11 @@ function actionLabel(actionType: GameActionType) {
     .replace("PLACE_INITIAL_", "SETUP ")
     .replace(/_/g, " ")
     .toLowerCase()
-    .replace(/\b\w/g, (match: string) => match.toUpperCase());
+      .replace(/\b\w/g, (match: string) => match.toUpperCase());
+}
+
+function playerDisplayName(playerId: string, roomState: RoomState | null) {
+  return roomState?.players.find((player) => player.playerId === playerId)?.playerName ?? playerId;
 }
 
 export default function App() {
@@ -85,7 +163,9 @@ export default function App() {
   const [gameId, setGameId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedActionType, setSelectedActionType] = useState<GameActionType | null>(null);
+  const [resourceGainLines, setResourceGainLines] = useState<string[]>([]);
   const socketRef = useRef<GameSocket | null>(null);
+  const previousSnapshotRef = useRef<GameSnapshotPayload | null>(null);
 
   const currentRoomId = roomState?.roomId ?? gameSnapshot?.roomId ?? "";
   const selfRoomPlayer = roomState?.players.find((player) => player.playerId === playerId) ?? null;
@@ -168,6 +248,8 @@ export default function App() {
         setErrorMessage(null);
         break;
       case "game_snapshot":
+        setResourceGainLines(resourceGainSummary(previousSnapshotRef.current, message.payload, roomState));
+        previousSnapshotRef.current = message.payload;
         setGameSnapshot(message.payload);
         setGameId(message.payload.gameId);
         setErrorMessage(null);
@@ -303,6 +385,22 @@ export default function App() {
   const board = gameSnapshot?.state.board;
   const players = gameSnapshot?.state.players ?? [];
   const selfState = players.find((player) => player.playerId === playerId) ?? null;
+  const svgViewBox = useMemo(() => boardViewBox(gameSnapshot), [gameSnapshot]);
+  const intersectionPositions = useMemo(
+    () => {
+      const entries = (board?.intersections ?? [])
+        .map((intersection) => [
+          intersection.intersectionId,
+          {
+            x: Number(intersection.x),
+            y: Number(intersection.y)
+          }
+        ] as const)
+        .filter(([, position]) => isFinitePoint(position));
+      return Object.fromEntries(entries) as Record<string, { x: number; y: number }>;
+    },
+    [board?.intersections]
+  );
 
   if (!gameSnapshot) {
     return (
@@ -440,6 +538,20 @@ export default function App() {
             )}
           </section>
 
+          {resourceGainLines.length > 0 ? (
+            <section className="panel compact-panel gain-panel">
+              <div className="panel-heading">
+                <h2>Latest Gain</h2>
+                <span className="subtle">from the newest snapshot</span>
+              </div>
+              <ul className="gain-list">
+                {resourceGainLines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
           <section className="panel compact-panel">
             <div className="panel-heading">
               <h2>Actions</h2>
@@ -468,24 +580,98 @@ export default function App() {
 
         <section className="board-stage">
           <div className="board-stage-inner">
-            <svg viewBox="0 0 700 520" className="board-svg" role="img" aria-label="KaTanDao board">
+            <svg viewBox={svgViewBox} className="board-svg" role="img" aria-label="KaTanDao board" preserveAspectRatio="xMidYMid meet">
               <defs>
-                <radialGradient id="seaGlow" cx="50%" cy="30%" r="75%">
-                  <stop offset="0%" stopColor="#c7e7f3" />
-                  <stop offset="100%" stopColor="#7ab1c8" />
+                <linearGradient id="seaBase" x1="0%" x2="0%" y1="0%" y2="100%">
+                  <stop offset="0%" stopColor="#0f6eac" />
+                  <stop offset="45%" stopColor="#1f89c4" />
+                  <stop offset="100%" stopColor="#63acd5" />
+                </linearGradient>
+                <radialGradient id="seaGlow" cx="50%" cy="38%" r="74%">
+                  <stop offset="0%" stopColor="rgba(255,255,255,0.22)" />
+                  <stop offset="100%" stopColor="rgba(255,255,255,0)" />
                 </radialGradient>
+                <filter id="islandGlow" x="-40%" y="-40%" width="180%" height="180%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="8" floodColor="#fff4b2" floodOpacity="0.9" />
+                </filter>
+                <pattern id="seaPattern" width="36" height="36" patternUnits="userSpaceOnUse">
+                  <path d="M0 8 C7 3, 14 3, 18 8 S29 13, 36 8" fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="1.4" />
+                  <path d="M0 24 C7 19, 14 19, 18 24 S29 29, 36 24" fill="none" stroke="rgba(6,55,88,0.18)" strokeWidth="1.2" />
+                </pattern>
+                <pattern id="woodPattern" width="80" height="80" patternUnits="userSpaceOnUse">
+                  <rect width="80" height="80" fill="#3f6a34" />
+                  <circle cx="18" cy="18" r="18" fill="rgba(255,255,255,0.05)" />
+                  <circle cx="52" cy="32" r="22" fill="rgba(19,47,15,0.22)" />
+                  <circle cx="34" cy="58" r="20" fill="rgba(255,255,255,0.04)" />
+                </pattern>
+                <pattern id="brickPattern" width="84" height="84" patternUnits="userSpaceOnUse">
+                  <rect width="84" height="84" fill="#b15a3c" />
+                  <path d="M0 21 H84 M0 42 H84 M0 63 H84" stroke="rgba(90,39,23,0.35)" strokeWidth="3" />
+                  <path d="M21 0 V21 M63 21 V42 M21 42 V63 M63 63 V84" stroke="rgba(239,197,182,0.18)" strokeWidth="3" />
+                </pattern>
+                <pattern id="sheepPattern" width="88" height="88" patternUnits="userSpaceOnUse">
+                  <rect width="88" height="88" fill="#95c85b" />
+                  <path d="M0 74 C18 54, 30 54, 44 74 S70 94, 88 74 V88 H0 Z" fill="rgba(64,114,40,0.28)" />
+                  <path d="M0 18 C20 8, 36 8, 52 18 S72 28, 88 18" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="2" />
+                </pattern>
+                <pattern id="wheatPattern" width="88" height="88" patternUnits="userSpaceOnUse">
+                  <rect width="88" height="88" fill="#d6b046" />
+                  <path d="M18 80 C28 62, 30 42, 30 8" stroke="rgba(125,90,17,0.4)" strokeWidth="3" />
+                  <path d="M42 80 C50 60, 54 40, 54 6" stroke="rgba(125,90,17,0.4)" strokeWidth="3" />
+                  <path d="M66 80 C72 62, 78 42, 78 12" stroke="rgba(125,90,17,0.4)" strokeWidth="3" />
+                </pattern>
+                <pattern id="orePattern" width="88" height="88" patternUnits="userSpaceOnUse">
+                  <rect width="88" height="88" fill="#7a8090" />
+                  <polygon points="0,88 28,28 46,44 68,8 88,48 88,88" fill="rgba(55,60,73,0.45)" />
+                  <path d="M0 60 L22 34 L42 50 L61 18 L88 54" fill="none" stroke="rgba(230,235,244,0.18)" strokeWidth="3" />
+                </pattern>
+                <pattern id="desertPattern" width="88" height="88" patternUnits="userSpaceOnUse">
+                  <rect width="88" height="88" fill="#1c1713" />
+                  <circle cx="44" cy="44" r="28" fill="rgba(255,255,255,0.06)" />
+                  <path d="M18 28 L70 56 M24 58 L64 30" stroke="rgba(255,255,255,0.05)" strokeWidth="4" />
+                </pattern>
               </defs>
-              <rect x="18" y="18" width="664" height="484" rx="42" fill="url(#seaGlow)" />
-              <path d="M 110 420 Q 220 310 290 335 T 560 360 L 590 502 L 100 502 Z" fill="#6c9e57" opacity="0.45" />
-              {board?.hexes.map((hex) => {
-                const center = hexCenters[hex.hexId] ?? { x: 350, y: 260 };
+              <rect x="18" y="18" width="904" height="684" rx="42" fill="url(#seaBase)" />
+              <rect x="18" y="18" width="904" height="684" rx="42" fill="url(#seaPattern)" opacity="0.8" />
+              <rect x="18" y="18" width="904" height="684" rx="42" fill="url(#seaGlow)" />
+              <path d="M 80 566 Q 232 394 372 428 T 804 458 L 832 702 L 64 702 Z" fill="#8fb08f" opacity="0.42" />
+              {(board?.ports ?? []).map((port) => (
+                <g key={port.portId} transform={`translate(${port.x} ${port.y}) rotate(${port.rotationDegrees})`}>
+                  <polygon points="-28,0 0,-48 28,0" fill="#f2e2bf" stroke="#d2be9b" strokeWidth="2" />
+                  <text textAnchor="middle" y="-10" className="port-label">{`${port.ratio}:1`}</text>
+                  <text textAnchor="middle" y="6" className="port-subtext">{port.tradeType === "ANY" ? "" : port.tradeType}</text>
+                </g>
+              ))}
+              {board?.hexes.map((hex, index) => {
+                const center = typeof hex.q === "number" && typeof hex.r === "number"
+                  ? hexCenterFromAxial(hex.q, hex.r)
+                  : fallbackHexCenter(index);
                 const color = resourcePalette[hex.resourceType];
+                const fillMap: Record<string, string> = {
+                  WOOD: "url(#woodPattern)",
+                  BRICK: "url(#brickPattern)",
+                  SHEEP: "url(#sheepPattern)",
+                  WHEAT: "url(#wheatPattern)",
+                  ORE: "url(#orePattern)",
+                  DESERT: "url(#desertPattern)"
+                };
                 return (
-                  <g key={hex.hexId}>
-                    <polygon points={hexPoints(center.x, center.y, 82)} fill={color.fill} stroke="rgba(32, 24, 18, 0.22)" strokeWidth="5" />
-                    <circle cx={center.x} cy={center.y} r="28" fill="rgba(255,255,255,0.88)" />
-                    <text x={center.x} y={center.y - 10} textAnchor="middle" className="hex-label">{color.label}</text>
-                    <text x={center.x} y={center.y + 12} textAnchor="middle" className="hex-number">{hex.numberToken}</text>
+                  <g key={hex.hexId} filter="url(#islandGlow)">
+                    <polygon points={hexPoints(center.x, center.y, 84)} fill={fillMap[hex.resourceType]} stroke="#efe3bf" strokeWidth="8" />
+                    <polygon points={hexPoints(center.x, center.y, 82)} fill="transparent" stroke="rgba(86, 59, 27, 0.38)" strokeWidth="3" />
+                    {hex.resourceType === "DESERT" ? (
+                      <>
+                        <circle cx={center.x} cy={center.y} r="31" fill="rgba(14,10,8,0.84)" stroke="#f2e3bf" strokeWidth="4" />
+                        <text x={center.x} y={center.y - 8} textAnchor="middle" className="hex-label robber-label">Robber</text>
+                        <text x={center.x} y={center.y + 14} textAnchor="middle" className="hex-number robber-label">R</text>
+                      </>
+                    ) : (
+                      <>
+                        <circle cx={center.x} cy={center.y} r="30" fill="rgba(255,249,239,0.94)" stroke="#5a4024" strokeWidth="3" />
+                        <text x={center.x} y={center.y - 10} textAnchor="middle" className="hex-label">{color.label}</text>
+                        <text x={center.x} y={center.y + 12} textAnchor="middle" className="hex-number">{hex.numberToken}</text>
+                      </>
+                    )}
                   </g>
                 );
               })}
@@ -493,6 +679,9 @@ export default function App() {
               {board?.edges.map((edge) => {
                 const from = intersectionPositions[edge.fromIntersectionId];
                 const to = intersectionPositions[edge.toIntersectionId];
+                if (!from || !to) {
+                  return null;
+                }
                 const selectable = targetIsSelectable(edge.edgeId);
                 const roadColor = edge.roadOwnerPlayerId ? playerColor(edge.roadOwnerPlayerId, orderedPlayerIds) : "#e8d8b5";
                 return (
@@ -512,18 +701,39 @@ export default function App() {
 
               {board?.intersections.map((intersection) => {
                 const position = intersectionPositions[intersection.intersectionId];
+                if (!position) {
+                  return null;
+                }
                 const selectable = targetIsSelectable(intersection.intersectionId);
                 const ownerColor = intersection.ownerPlayerId ? playerColor(intersection.ownerPlayerId, orderedPlayerIds) : "#fff7e6";
+                const ownerName = intersection.ownerPlayerId ? playerDisplayName(intersection.ownerPlayerId, roomState) : null;
                 return (
                   <g
                     key={intersection.intersectionId}
                     className={selectable ? "board-node is-selectable" : "board-node"}
                     onClick={() => selectable && selectedActionType && sendAction(selectedActionType, intersection.intersectionId)}
                   >
-                    <circle cx={position.x} cy={position.y} r={intersection.buildingType === "CITY" ? 19 : 15} fill={ownerColor} stroke="#4c341f" strokeWidth="4" />
+                    {intersection.buildingType === "CITY" ? (
+                      <>
+                        <rect x={position.x - 18} y={position.y - 18} width="36" height="26" rx="6" fill={ownerColor} stroke="#4c341f" strokeWidth="4" />
+                        <polygon points={`${position.x - 20},${position.y - 6} ${position.x},${position.y - 28} ${position.x + 20},${position.y - 6}`} fill={ownerColor} stroke="#4c341f" strokeWidth="4" />
+                      </>
+                    ) : (
+                      <polygon
+                        points={`${position.x - 16},${position.y + 10} ${position.x},${position.y - 18} ${position.x + 16},${position.y + 10}`}
+                        fill={ownerColor}
+                        stroke="#4c341f"
+                        strokeWidth="4"
+                      />
+                    )}
                     <text x={position.x} y={position.y + 36} textAnchor="middle" className="node-label">
                       {intersection.intersectionId}
                     </text>
+                    {ownerName ? (
+                      <text x={position.x} y={position.y + 50} textAnchor="middle" className="owner-label">
+                        {ownerName}
+                      </text>
+                    ) : null}
                   </g>
                 );
               })}
@@ -539,7 +749,7 @@ export default function App() {
             </div>
             <div className="table-stack">
               {players.map((player) => {
-                const playerNameLabel = roomState?.players.find((item) => item.playerId === player.playerId)?.playerName ?? player.playerId;
+                const playerNameLabel = playerDisplayName(player.playerId, roomState);
                 return (
                   <article key={player.playerId} className={player.playerId === playerId ? "table-player is-self" : "table-player"}>
                     <div className="player-badge" style={{ backgroundColor: playerColor(player.playerId, orderedPlayerIds) }} />
@@ -570,4 +780,39 @@ export default function App() {
       </section>
     </main>
   );
+}
+
+function resourceGainSummary(
+  previousSnapshot: GameSnapshotPayload | null,
+  nextSnapshot: GameSnapshotPayload,
+  roomState: RoomState | null
+) {
+  if (!previousSnapshot) {
+    return [];
+  }
+
+  const lines: string[] = [];
+  for (const nextPlayer of nextSnapshot.state.players) {
+    const previousPlayer = previousSnapshot.state.players.find((player) => player.playerId === nextPlayer.playerId);
+    if (!previousPlayer) {
+      continue;
+    }
+
+    const changes = Object.entries(nextPlayer.resources)
+      .map(([resource, amount]) => ({
+        resource,
+        delta: amount - (previousPlayer.resources[resource] ?? 0)
+      }))
+      .filter((entry) => entry.delta > 0);
+
+    if (changes.length === 0) {
+      continue;
+    }
+
+    const name = playerDisplayName(nextPlayer.playerId, roomState);
+    const summary = changes.map((entry) => `+${entry.delta} ${resourcePalette[entry.resource].label}`).join(", ");
+    lines.push(`${name}: ${summary}`);
+  }
+
+  return lines;
 }

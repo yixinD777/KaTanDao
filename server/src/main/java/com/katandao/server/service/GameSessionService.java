@@ -50,6 +50,16 @@ public class GameSessionService {
         return Optional.ofNullable(byRoomId.get(roomId));
     }
 
+    public Optional<GameSnapshotPayload> replaceState(String roomId, GameState state) {
+        GameSession existing = byRoomId.get(roomId);
+        if (existing == null) {
+            return Optional.empty();
+        }
+        GameSession updatedSession = new GameSession(existing.gameId(), existing.roomId(), state);
+        byRoomId.put(roomId, updatedSession);
+        return Optional.of(toSnapshot(state, existing.roomId(), existing.gameId()));
+    }
+
     public Optional<GameSnapshotPayload> handleAction(GameActionPayload payload) {
         GameSession gameSession = byRoomId.get(payload.roomId());
         if (gameSession == null) {

@@ -6,10 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.katandao.gamecore.GameState;
+import com.katandao.gamecore.ResourceType;
 import com.katandao.server.game.GameSession;
 import com.katandao.server.model.RoomState;
 import com.katandao.server.protocol.payload.GameActionPayload;
 import com.katandao.server.protocol.payload.GameSnapshotPayload;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -76,8 +79,32 @@ class GameSessionServiceTest {
         apply(session, started.roomId(), "p2", com.katandao.server.game.GameActionType.PLACE_INITIAL_SETTLEMENT, "intersectionId", "I-03");
         apply(session, started.roomId(), "p2", com.katandao.server.game.GameActionType.PLACE_INITIAL_ROAD, "edgeId", "E-02");
         apply(session, started.roomId(), "p3", com.katandao.server.game.GameActionType.PLACE_INITIAL_SETTLEMENT, "intersectionId", "I-05");
-        GameSnapshotPayload snapshot = apply(session, started.roomId(), "p3", com.katandao.server.game.GameActionType.PLACE_INITIAL_ROAD, "edgeId", "E-05");
-        snapshot = apply(session, started.roomId(), "p1", com.katandao.server.game.GameActionType.ROLL_DICE, null, null);
+        apply(session, started.roomId(), "p3", com.katandao.server.game.GameActionType.PLACE_INITIAL_ROAD, "edgeId", "E-05");
+        GameSnapshotPayload rolledSnapshot = apply(session, started.roomId(), "p1", com.katandao.server.game.GameActionType.ROLL_DICE, null, null);
+
+        GameState enrichedState = new GameState(
+                rolledSnapshot.state().gameId(),
+                rolledSnapshot.state().phase(),
+                rolledSnapshot.state().board(),
+                rolledSnapshot.state().players().stream()
+                        .map(player -> player.playerId().equals("p1")
+                                ? player.withResources(Map.of(
+                                ResourceType.WOOD, 1,
+                                ResourceType.BRICK, 1,
+                                ResourceType.SHEEP, 1,
+                                ResourceType.WHEAT, 1,
+                                ResourceType.ORE, 0,
+                                ResourceType.DESERT, 0
+                        ))
+                                : player)
+                        .toList(),
+                rolledSnapshot.state().turn(),
+                rolledSnapshot.state().dice(),
+                rolledSnapshot.state().version(),
+                rolledSnapshot.state().winnerPlayerId()
+        );
+
+        GameSnapshotPayload snapshot = gameSessionService.replaceState(started.roomId(), enrichedState).orElseThrow();
 
         Set<String> actionTypes = snapshot.legalActions().stream()
                 .map(action -> action.actionType().name())
